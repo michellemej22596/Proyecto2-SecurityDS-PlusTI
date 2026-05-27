@@ -1,265 +1,736 @@
-# Descripción de Variables — Dataset de Features
+# Descripción Completa de Variables — Dataset de Features
 
 **Proyecto:** Detección de Fraude en Establecimientos de Hospedaje  
 **PLUS TI – Universidad del Valle 2025**  
-**Integrantes:** Silvia Illescas · Davis Roldán · Michelle Mejía
-
-> **Archivo fuente:** `data/processed/features_dataset.csv`  
-> **Total de columnas:** 97  
-> **Filas:** 100,003 transacciones (banco BO-VIP)
+**Integrantes:** Silvia Illescas · Davis Roldán · Michelle Mejía  
+**Notebook fuente:** `notebooks/02_feature_engineering.ipynb`  
+**Archivo:** `data/processed/features_dataset.csv` — 100,003 filas · 111 columnas
 
 ---
 
-## Índice de categorías
+## Índice
 
-1. [Identificadores](#1-identificadores--no-usar-en-el-modelo)
-2. [Campos ISO 8583 originales](#2-campos-iso-8583-originales)
-3. [Variables de contexto banco/cliente](#3-variables-de-contexto-bancocliente)
-4. [Variables temporales del preprocesamiento](#4-variables-temporales-del-preprocesamiento)
-5. [Features de hospedaje — EDA](#5-features-de-hospedaje--notebook-01-eda)
-6. [Features históricas por cliente](#6-features-históricas-por-cliente--notebook-02)
-7. [Features históricas por canal](#7-features-históricas-por-canal--notebook-02)
-8. [Features históricas de hospedaje](#8-features-históricas-de-hospedaje--notebook-02)
-9. [Features temporales / velocidad](#9-features-temporales--velocidad--notebook-02)
-10. [Features de ventana deslizante — Half 1](#10-features-de-ventana-deslizante--half-1-notebook-02)
-11. [Half 2 — Pendiente compañera](#11-half-2--pendiente-compañera)
-12. [Variables excluidas del modelo](#12-variables-excluidas-del-modelo-leakage)
-
----
-
-## 1. Identificadores — NO usar en el modelo
-
-| # | Variable | Descripción |
-|---|---|---|
-| 1 | `transaction_id` | UUID único de la transacción. Solo para trazabilidad. |
-| 2 | `bank_code` | Código del banco emisor (ej. `BO-VIP`). |
-| 3 | `bank_name` | Nombre del banco. |
-| 4 | `bank_country` | País del banco emisor (ISO alfa-2). |
-| 5 | `bank_tier` | Nivel del banco: `vip`, `private`, `state`. |
-| 6 | `client_id` | ID interno del cliente. Usado para agrupar, no como feature directa. |
-| 10 | `pan_masked` | Número de tarjeta parcialmente enmascarado. |
-| 11 | `pan_hash` | Hash SHA del PAN completo. |
+1. [Variables originales del dataset](#1-variables-originales-del-dataset)
+2. [Variables temporales del preprocesamiento](#2-variables-temporales-del-preprocesamiento)
+3. [Features de hospedaje — Notebook 01](#3-features-de-hospedaje--notebook-01)
+4. [Features históricas por cliente](#4-features-históricas-por-cliente)
+5. [Features históricas por canal](#5-features-históricas-por-canal)
+6. [Features históricas de hospedaje](#6-features-históricas-de-hospedaje)
+7. [Features temporales y de velocidad](#7-features-temporales-y-de-velocidad)
+8. [Features de ventana deslizante — Half 1](#8-features-de-ventana-deslizante--half-1)
+9. [Features hotel y comportamiento avanzado — Half 2](#9-features-hotel-y-comportamiento-avanzado--half-2)
+10. [Variables excluidas — Leakage](#10-variables-excluidas--leakage)
+11. [Tabla resumen](#11-tabla-resumen)
 
 ---
 
-## 2. Campos ISO 8583 originales
-
-Campos crudos del estándar financiero ISO 8583. Prefijo `DE` + número de Data Element.
-
-| # | Variable | Descripción | Uso en modelo |
-|---|---|---|---|
-| 13 | `DE2_PAN` | Número de tarjeta en formato numérico. | ❌ No |
-| 14 | `DE3_processing_code` | Tipo de operación (000000=compra, 010000=retiro, 200000=devolución). | ⚠️ Opcional |
-| 15 | `DE4_amount_transaction` | Monto en moneda local sin decimales. | ❌ Usar `amount_usd` |
-| 16 | `DE6_amount_cardholder_billing` | Monto en moneda de facturación del tarjetahabiente. | ❌ Usar `amount_usd` |
-| 17 | `DE7_transmission_datetime` | Fecha/hora raw en formato `MMDDHHmmss` (9 dígitos). | ❌ Usar `transaction_datetime` |
-| 18 | `DE9_conversion_rate_billing` | Tasa de cambio aplicada a la facturación. | ⚠️ Opcional |
-| 19 | `DE11_STAN` | System Trace Audit Number — número de traza único (6 dígitos). | ❌ No |
-| 20 | `DE12_local_time` | Hora local en formato `HHmmss`. | ❌ Usar `hour_local` |
-| 21 | `DE13_local_date` | Fecha local en formato `MMDD`. | ❌ Usar `transaction_month` |
-| 22 | `DE14_expiration_date` | Fecha de vencimiento de la tarjeta (`YYMM`). | ⚠️ Opcional |
-| 23 | `DE15_settlement_date` | Fecha de liquidación de la transacción. | ❌ No |
-| 24 | `DE18_merchant_category_code` | **MCC** — Código de categoría del comercio (4 dígitos). Variable clave. | ✅ Sí |
-| 25 | `DE19_acquirer_country_code` | País del adquirente en código numérico ISO 3166-1. | ✅ Sí |
-| 26 | `DE22_pos_entry_mode` | **Modo de captura del PAN:** `81`=ecom, `51`=chip, `71`=contactless, `10`=manual, `22`=banda. | ✅ Sí |
-| 27 | `DE23_card_seq_number` | Número de secuencia de la tarjeta (reemisiones). | ⚠️ Opcional |
-| 28 | `DE25_pos_condition_code` | **Condición del POS:** `0`=presencial, `59`=ecom, `8`=MOTO, `1`=CNP recurrente. | ✅ Sí |
-| 29 | `DE32_acquiring_institution_id` | BIN del banco adquirente. | ❌ No |
-| 30 | `DE35_track2_data_masked` | Datos de pista 2 enmascarados. Sin valor predictivo. | ❌ No |
-| 31 | `DE37_retrieval_reference_number` | Número de referencia para disputas/conciliación (12 chars). | ❌ No |
-| 33 | `DE39_response_code` | ⚠️ **LEAKAGE** — Código de respuesta del emisor post-autorización. | ❌ Excluir |
-| 34 | `DE41_terminal_id` | ID del terminal POS o ATM. | ⚠️ Opcional |
-| 35 | `DE42_card_acceptor_id` | **ID único del comercio** (15 chars). Útil para conteos por comercio. | ✅ Sí |
-| 36 | `DE43_card_acceptor_name_location` | Nombre, ciudad y país del comercio (40 chars). | ⚠️ Requiere parsing |
-| 37 | `DE49_currency_code_transaction` | Código numérico de moneda de la transacción (840=USD, 978=EUR). | ⚠️ Opcional |
-| 38 | `DE50_currency_code_settlement` | Código de moneda de liquidación. | ❌ No |
-| 39 | `DE51_currency_code_billing` | Código de moneda de facturación al cliente. | ❌ No |
-| 40 | `DE52_pin_data_present` | Flag de uso de PIN: `Y`/`N`. | ✅ Sí |
-| 41 | `DE55_emv_data_present` | Flag de uso de chip EMV: `Y`/`N`. | ✅ Sí |
-| 42 | `DE58_authorizing_agent_id` | ID del agente autorizador. | ❌ No |
-| 43 | `DE60_pos_terminal_type` | Tipo de terminal: `POS-ATTENDED`, `ECOM-VIRTUAL`, `ATM-UNATTENDED`. | ✅ Sí |
-| 44 | `DE61_pos_extended_data` | Datos extendidos del POS (capacidades). | ⚠️ Opcional |
-| 45 | `DE63_network_specific` | Red del banco (ej. `BO-VIP`). | ❌ No |
-| 46 | `DE100_receiving_institution_id` | ID de la institución receptora. | ❌ No |
-| 47 | `DE102_account_id_1` | Identificación de la cuenta origen enmascarada. | ❌ No |
-| 48 | `DE123_pos_data_code` | Código de capacidades del POS (chip, contactless, titular presente). | ⚠️ Opcional |
+> ### Principio fundamental: garantía anti look-ahead
+>
+> Todas las features históricas se calculan usando **exclusivamente las transacciones anteriores** a la actual.  
+> Para la transacción número N de un cliente, los agregados usan solo las N-1 transacciones previas.  
+> **Técnica vectorizada usada:**
+> ```python
+> # suma ANTES de la fila actual = cumsum_hasta_actual - valor_actual
+> suma_antes = df.groupby('client_id')['amount_usd'].cumsum() - df['amount_usd']
+> promedio_antes = suma_antes / df.groupby('client_id').cumcount().replace(0, np.nan)
+> ```
+> Esta formulación evita filtraciones de información futura hacia el modelo.
 
 ---
 
-## 3. Variables de contexto banco/cliente
+## 1. Variables originales del dataset
 
-Variables adicionales que acompañan el mensaje ISO 8583 en el dataset.
+Variables provistas directamente en los archivos CSV de PlusTI. No requieren cálculo adicional.
 
-| # | Variable | Descripción | Uso en modelo |
-|---|---|---|---|
-| 8 | `channel` | Canal de la transacción: `POS`, `ECOM`, `ATM`, `MOTO`. | ✅ Sí |
-| 9 | `card_brand` | Marca de la tarjeta: `VISA`, `MASTERCARD`, etc. | ⚠️ Opcional |
-| 7 | `client_segment` | Segmento del cliente: `PLATINUM`, `BLACK`, `PRIVATE`, `INFINITE`. | ⚠️ Opcional |
-| 49 | `amount_local` | Monto en moneda local del cliente. | ❌ Usar `amount_usd` |
-| 50 | `amount_tx_currency` | Monto en la moneda de la transacción. | ❌ Usar `amount_usd` |
-| 51 | `currency_tx_alpha` | Código alfabético de moneda (USD, EUR, BOB…). | ⚠️ Opcional |
-| 52 | `amount_usd` | **Monto normalizado en USD.** Variable principal de monto. | ✅ Sí |
-| 53 | `is_international` | `True` si el comercio está en un país diferente al del cliente. | ✅ Sí |
-| 54 | `distance_from_home_km` | Distancia en km entre la ciudad del cliente y el comercio. | ✅ Sí |
-| 55 | `hour_local` | Hora local de la transacción (0–23). | ✅ Sí |
-| 56 | `day_of_week` | Día de la semana: `Mon`, `Tue`, …, `Sun`. | ✅ Sí |
-| 57 | `approved` | ⚠️ **LEAKAGE** — Booleano: si la transacción fue aprobada. | ❌ Excluir |
-| 58 | `response_description` | ⚠️ **LEAKAGE** — Descripción textual de la respuesta del emisor. | ❌ Excluir |
-| 32 | `DE38_authorization_code` | ⚠️ **LEAKAGE** — Código de autorización emitido post-aprobación. | ❌ Excluir |
-| 59 | `client_baseline_amount` | Monto base de gasto habitual del cliente (fuente externa al dataset). | ✅ Sí |
-| 60 | `client_home_city` | Ciudad de residencia del cliente. | ⚠️ Opcional |
-| **61** | **`is_fraud`** | 🎯 **TARGET** — `True` si la transacción es fraudulenta (~5% del total). | — |
+### Variables de identificación (no usar en el modelo)
 
----
-
-## 4. Variables temporales del preprocesamiento
-
-Extraídas del campo `DE7_transmission_datetime` con el formato correcto `%m%d%H%M%S`.
-
-> **Corrección aplicada:** el campo original tiene 9 dígitos. Se aplica `zfill(10)` antes del parseo para evitar pérdida del 28% de registros que ocurría con el formato `%Y%m%d%H%M%S` incorrecto.
-
-| # | Variable | Descripción |
-|---|---|---|
-| 62 | `transaction_datetime` | Datetime parseado (`1900-MM-DD HH:mm:ss`). Año 1900 por defecto; diferencias temporales son correctas. |
-| 63 | `transaction_month` | Mes de la transacción (1–6). Mes 6 = **set de test final**. |
-| 64 | `transaction_day` | Día del mes (1–31). |
-| 65 | `transaction_date` | Fecha sin hora (`date` object). |
-
----
-
-## 5. Features de hospedaje — Notebook 01 EDA
-
-| # | Variable | Descripción | Nulos |
-|---|---|---|---|
-| 66 | `is_hotel` | `True` si `DE18_merchant_category_code == 7011`. **Confirmado con PlusTI:** el rango ISO 3501–3999 no aparece en el dataset; el único MCC de hospedaje es el 7011. | 0% |
-| 67 | `amount_vs_baseline` | `amount_usd − client_baseline_amount`. Diferencia absoluta respecto al gasto habitual del cliente. | 0% |
-| 68 | `amount_baseline_ratio` | `amount_usd / client_baseline_amount`. Ratio del monto actual vs línea base. | 0% |
-| 69 | `hotel_international` | `True` si es transacción en hotel **y** es internacional. Combinación de alto riesgo. | 0% |
-| 70 | `hotel_high_distance` | `True` si es hotel **y** `distance_from_home_km > percentil 75`. | 0% |
-
----
-
-## 6. Features históricas por cliente — Notebook 02
-
-> **Garantía anti look-ahead:** calculadas con `cumsum − valor_actual` (vectorizado) o `expanding().shift(1)` dentro del `transform` por grupo. Los NaN en primeras transacciones son **estructurales y correctos**.
-
-| # | Variable | Descripción | Nulos |
-|---|---|---|---|
-| 71 | `client_txn_count_before` | Número de transacciones previas del mismo cliente. `0` = primera transacción. | 0% |
-| 72 | `client_avg_amount_before` | Promedio de `amount_usd` de todas las transacciones anteriores del cliente. | 4% |
-| 73 | `client_std_amount_before` | Desviación estándar histórica del monto del cliente. NaN en las primeras 2 txns. | 8% |
-| 74 | `client_max_amount_before` | Monto máximo registrado anteriormente para este cliente. | 4% |
-| 75 | `amount_vs_hist_avg` | `amount_usd / client_avg_amount_before`. Ratio del monto actual vs promedio histórico del cliente. | 4% |
-| 76 | `amount_over_hist_std` | Z-score: `(amount_usd − client_avg_amount_before) / client_std_amount_before`. Alias: `amount_zscore_customer`. | 8% |
-| 77 | `client_intl_rate_before` | Proporción histórica de transacciones internacionales del cliente (0.0–1.0). | 4% |
-
----
-
-## 7. Features históricas por canal — Notebook 02
-
-> Misma lógica anti look-ahead pero agrupando por `(client_id, channel)`.
-
-| # | Variable | Descripción | Nulos |
-|---|---|---|---|
-| 78 | `client_channel_txn_count_before` | Nº de txns previas del cliente **en el mismo canal** (POS/ECOM/ATM/MOTO). | 0% |
-| 79 | `client_channel_avg_amount_before` | Promedio histórico del monto del cliente en ese canal. | 14% |
-| 80 | `amount_vs_channel_avg` | `amount_usd / client_channel_avg_amount_before`. Ratio vs promedio del canal. | 14% |
-| 92 | `client_channel_std_before` | Desviación estándar histórica del monto en ese canal. Insumo para `amount_zscore_channel`. | 27% |
-
----
-
-## 8. Features históricas de hospedaje — Notebook 02
-
-> Agrupando por `(client_id, is_hotel)`. Los NaN al 94.5% son **esperados**: la mayoría de transacciones no son en hotel.
-
-| # | Variable | Descripción | Nulos |
-|---|---|---|---|
-| 81 | `client_hotel_txn_count_before` | Nº de txns previas del cliente en comercios de hospedaje (MCC 7011). `0` si nunca fue a un hotel. | 0% |
-| 82 | `client_hotel_avg_amount_before` | Promedio histórico de monto del cliente en hotels. NaN si no hay historial hotelero. | 94.5% |
-| 83 | `client_hotel_intl_rate_before` | Proporción histórica de hotels internacionales del cliente. NaN si sin historial. | 94.5% |
-| 84 | `client_hotel_first_time` | `1` si es la primera vez que el cliente transacciona en un hotel. Señal de alerta. | 0% |
-
----
-
-## 9. Features temporales / velocidad — Notebook 02
-
-| # | Variable | Descripción | Fraude vs Legítimo |
-|---|---|---|---|
-| 85 | `hours_since_last_txn` | Horas transcurridas desde la transacción anterior del mismo cliente. `−1` si es la primera txn. | Fraude: mediana **2.1h** / Legítimo: mediana 119h |
-| 86 | `is_rapid_succession` | `1` si `hours_since_last_txn < 1`. Flag de *card-testing* o uso intensivo. | Fraude: **41%** / Legítimo: 0.6% |
-| 87 | `time_since_last_txn_min` | Ídem `hours_since_last_txn` expresado en **minutos**. Mayor granularidad para el modelo. | Fraude: mediana **126 min** / Legítimo: mediana 7,157 min |
-
----
-
-## 10. Features de ventana deslizante — Half 1, Notebook 02
-
-> Calculadas con ventana temporal deslizante hacia atrás (solo transacciones anteriores a la actual). Implementadas con `bisect_left` sobre tiempos ordenados → **O(n log n)**.
-
-| # | Variable | Descripción | Fraude vs Legítimo |
-|---|---|---|---|
-| 88 | `txn_count_last_1h` | Nº de transacciones del cliente en la **última hora** antes de la actual. | Fraude: 6.7 / Legítimo: 5.1 |
-| 89 | `txn_count_last_24h` | Nº de transacciones del cliente en las **últimas 24 horas**. | Fraude: 13.9 / Legítimo: 12.5 |
-| 90 | `txn_count_last_7d` | Nº de transacciones del cliente en los **últimos 7 días**. | Fraude: 13.9 / Legítimo: 12.5 |
-| 91 | `amount_zscore_customer` | Z-score del monto respecto al historial personal del cliente. Alias de `amount_over_hist_std` con nombre estándar del enunciado. | Fraude: mediana +0.96σ / Legítimo: −0.41σ |
-| 93 | `amount_zscore_channel` | Z-score del monto respecto al historial del cliente **en el mismo canal**. Más preciso que el z-score global. | Fraude: mediana +0.92σ / Legítimo: −0.40σ |
-| 94 | `unique_merchants_last_24h` | Nº de comercios distintos visitados por el cliente en las últimas 24h. Patrón de *enumeration fraud*. | Fraude: 13.6 / Legítimo: 12.3 |
-| 95 | `unique_countries_last_24h` | Nº de países distintos en las últimas 24h. Detecta *impossible travel*. | Fraude: 3.4 / Legítimo: 3.0 |
-| 96 | `is_night_transaction` | `1` si `hour_local` está entre 00:00 y 04:59. Más relevante en hospedaje (check-ins tardíos). | Hotel fraude: **14%** / Hotel legítimo: 8.2% |
-| 97 | `amount_vs_max_ever_ratio` | `amount_usd / client_max_amount_before`. Ratio > 1 significa que el monto supera el máximo histórico del cliente. | Fraude: **29%** supera máx. / Legítimo: 10.7% |
-
----
-
-## 11. Half 2 — Pendiente (compañera)
-
-Partir del archivo `data/processed/features_dataset.csv` y agregar al final del notebook `02_feature_engineering.ipynb`.
-
-| # | Variable | Descripción | Tipo |
-|---|---|---|---|
-| 98 | `hotel_amount_zscore` | Z-score del monto actual en hotel vs historial hotelero del cliente: `(amount_usd − client_hotel_avg_before) / hotel_std_before`. | 🏨 Hotel |
-| 99 | `days_since_last_hotel_txn` | Días desde la última transacción del cliente en hotel. `−1` si nunca fue. | 🏨 Hotel |
-| 100 | `hotel_new_country` | `1` si el `DE19_acquirer_country_code` de este hotel nunca apareció en txns hoteleras anteriores del cliente. | 🏨 Hotel 🟢 Innovadora |
-| 101 | `merchant_txn_count_before` | Nº de veces que el cliente usó este comercio específico (`DE42_card_acceptor_id`) antes. `0` = comercio nuevo. | 🏪 Merchant |
-| 102 | `rapid_country_change` | `1` si el país de esta txn difiere del de la txn anterior **y** `time_since_last_txn_min < 1440` (24h). *Impossible travel*. | ✈️ Viaje 🟢 Innovadora |
-| 103 | `amount_round_flag` | `1` si el monto es múltiplo exacto de 50 o 100 USD. Patrón de *card-testing* (prueba con montos redondos). | 💳 Fraude pattern |
-| 104 | `client_weekend_rate_before` | Proporción histórica de compras del cliente en fin de semana (`Sat` / `Sun`). | 📅 Comportamiento |
-| 105 | `hotel_distance_zscore` | Z-score de `distance_from_home_km` respecto al historial de distancias hoteleras del cliente. | 🏨 Hotel 🟢 Innovadora |
-| 106 | `hour_deviation_from_usual` | `|hour_local − media_histórica_hora_cliente|`. Cuánto se aleja la hora actual de la hora habitual del cliente. | 🟢 Innovadora |
-| 107 | `client_mcc_diversity_before` | Nº de MCCs distintos visitados históricamente por el cliente (expanding nunique). Mide diversidad de gasto. | 🟢 Innovadora |
-
----
-
-## 12. Variables excluidas del modelo (leakage)
-
-Estas variables **no deben usarse como features** porque reflejan decisiones tomadas **después** de la transacción (post-autorización). Usarlas como input introduciría información futura al modelo.
-
-| Variable | Razón de exclusión |
+| Variable | Descripción |
 |---|---|
-| `approved` | Resultado de la autorización — se conoce después de la decisión |
-| `DE39_response_code` | Código de respuesta del emisor — post-autorización |
-| `response_description` | Descripción textual del código de respuesta — post-autorización |
-| `DE38_authorization_code` | Código emitido solo si la transacción es aprobada — post-autorización |
+| `transaction_id` | UUID único de la transacción. Solo para trazabilidad y debugging. |
+| `bank_code` / `bank_name` / `bank_country` / `bank_tier` | Metadatos del banco emisor. `bank_tier` puede ser útil en el modelo federado (vip / private / state). |
+| `client_id` | Identificador del cliente. Se usa para agrupar transacciones, no como feature directa. |
+| `pan_masked` / `pan_hash` | Tarjeta enmascarada y su hash. No aportan información predictiva. |
+
+### Campos ISO 8583 útiles para el modelo
+
+| Variable | Descripción y uso |
+|---|---|
+| `DE18_merchant_category_code` | Código MCC (4 dígitos) que identifica el rubro del comercio. Variable clave: permite filtrar hoteles (7011), distinguir ATMs (6011), restaurantes (5812), etc. Alta variabilidad entre categorías de fraude. |
+| `DE19_acquirer_country_code` | País del adquirente en código numérico ISO 3166-1. Indica dónde ocurrió físicamente la transacción. Usado para detectar cambios de país. |
+| `DE22_pos_entry_mode` | Modo de captura del PAN. `81`=ecom (mayor fraude 8%), `51`=chip EMV, `71`=contactless, `10`=manual (alto riesgo), `22`=banda magnética (clonación). Feature muy relevante. |
+| `DE25_pos_condition_code` | Condición del POS. `59`=ecom, `0`=presencial, `8`=MOTO. Complementa `DE22`. |
+| `DE42_card_acceptor_id` | ID único del comercio (15 caracteres). Permite agrupar transacciones por establecimiento específico. Usado para `merchant_txn_count_before`. |
+| `DE52_pin_data_present` | Flag `Y`/`N` de si se usó PIN. Transacciones sin PIN en POS presencial son más sospechosas. |
+| `DE55_emv_data_present` | Flag de uso de chip EMV. Ausencia de chip en tarjeta con chip = posible clonación de banda. |
+| `DE60_pos_terminal_type` | Tipo de terminal: `POS-ATTENDED`, `ECOM-VIRTUAL`, `ATM-UNATTENDED`. Complementa canal. |
+
+### Variables de contexto banco/cliente
+
+| Variable | Descripción y uso |
+|---|---|
+| `channel` | Canal de la transacción: `POS`, `ECOM`, `ATM`, `MOTO`. ECOM tiene la mayor tasa de fraude (8%). Feature muy relevante. |
+| `amount_usd` | Monto normalizado en USD. Variable base de la mayoría de features de monto. Media en fraude: $1,101 vs $396 en legítimos. |
+| `is_international` | `True` si el comercio está en un país diferente al del cliente. Tasa de fraude internacional: 8.5% vs 3.8% local. |
+| `distance_from_home_km` | Distancia en km entre la ciudad del cliente y el comercio. Media en fraude: 2,895 km vs 1,721 km en legítimos. Feature importante para hospedaje. |
+| `hour_local` | Hora local de la transacción (0–23). Fraudes tienen mayor concentración en horas de madrugada. |
+| `day_of_week` | Día de la semana (Mon–Sun). Miércoles y sábado tienen tasas ligeramente mayores de fraude. |
+| `client_baseline_amount` | Monto base de gasto habitual del cliente, provisto externamente. Punto de referencia para calcular `amount_vs_baseline` y `amount_baseline_ratio`. |
+| `client_home_city` | Ciudad de residencia del cliente. Usada indirectamente para calcular distancia. |
+| `is_fraud` | 🎯 **Variable objetivo (target)**. `True` si la transacción es fraudulenta. Distribución: ~5% fraude / 95% legítimo. Problema de clasificación binaria desbalanceada. |
+
+### Variables excluidas — LEAKAGE
+
+Las siguientes variables reflejan el resultado de la autorización y **no deben usarse como features**. Conocerlas antes de la decisión equivale a hacer trampa.
+
+| Variable | Por qué es leakage |
+|---|---|
+| `approved` | Indica si la transacción fue aprobada — decisión posterior a la que queremos predecir. |
+| `DE39_response_code` | Código de respuesta del emisor (00=aprobada, 05=declinada, etc.) — post-autorización. |
+| `response_description` | Descripción textual del código de respuesta — post-autorización. |
+| `DE38_authorization_code` | Código emitido solo cuando la transacción es aprobada — post-autorización. |
 
 ---
 
-## Resumen de conteos
+## 2. Variables temporales del preprocesamiento
+
+Extraídas del campo `DE7_transmission_datetime` durante la fase de limpieza en `01_eda.ipynb`.
+
+> **Corrección aplicada:** el campo original tiene 9 dígitos en formato `MMDDHHmmss`. El notebook usaba `format="%Y%m%d%H%M%S"` incorrectamente, generando 27,959 registros con fecha `NaT` y perdiendo el 28% de los datos en el split. Se corrigió con `zfill(10)` + `format="%m%d%H%M%S"`, recuperando todos los 100,003 registros.
+
+| Variable | Cómo se calculó | Para qué sirve |
+|---|---|---|
+| `transaction_datetime` | `pd.to_datetime(DE7.str.zfill(10), format="%m%d%H%M%S")`. Año por defecto 1900 — las diferencias temporales son correctas. | Base para calcular `hours_since_last_txn` y todas las ventanas deslizantes. |
+| `transaction_month` | `.dt.month` del campo anterior. Valores 1–6. | **Separación train/test**: meses 1–5 = entrenamiento (83,817 filas), mes 6 = test final (16,186 filas). |
+| `transaction_day` | `.dt.day` | Análisis de patrones por día del mes. |
+| `transaction_date` | `.dt.date` | Agrupaciones diarias. |
+
+---
+
+## 3. Features de hospedaje — Notebook 01
+
+Creadas durante el EDA inicial para enfocar el análisis en el objetivo del proyecto.
+
+---
+
+### `is_hotel`
+**Cómo se calculó:**
+```python
+HOTEL_MCCS = [7011]
+df['is_hotel'] = df['DE18_merchant_category_code'].isin(HOTEL_MCCS)
+```
+**Confirmación con PlusTI:** se cruzaron los MCCs presentes en el dataset contra el rango estándar ISO 8583 de hospedaje (3501–3999 + 7011). El rango 3501–3999 (cadenas individuales como Hilton, Marriott con código propio) **no aparece en los datos**. Solo el MCC 7011 (hoteles y moteles general) está presente, confirmado validando los nombres reales de los comercios (`HOTEL HILTON`, `HYATT INN`, etc.). El flag original usaba el rango completo innecesariamente.
+
+**Para qué sirve:** etiqueta las 9,064 transacciones de hospedaje (9.1% del dataset). Es la variable base para todas las features hotel-específicas. Tasa de fraude en hotel: **4.58%**.
+
+---
+
+### `amount_vs_baseline`
+**Cómo se calculó:**
+```python
+df['amount_vs_baseline'] = df['amount_usd'] - df['client_baseline_amount']
+```
+**Para qué sirve:** mide cuánto se aleja el monto actual del gasto habitual del cliente (en términos absolutos). Un valor positivo grande indica un gasto atípicamente alto. Media en fraude: −$456 vs −$1,172 en legítimos — los fraudulentos se acercan más al baseline o lo superan.
+
+---
+
+### `amount_baseline_ratio`
+**Cómo se calculó:**
+```python
+df['amount_baseline_ratio'] = df['amount_usd'] / df['client_baseline_amount']
+```
+**Para qué sirve:** versión relativa de `amount_vs_baseline`. Un ratio de 2.0 significa que el cliente gastó el doble de su línea base. Media en fraude: **0.70** vs 0.25 en legítimos — los fraudes representan una fracción mucho mayor del baseline. Es una de las variables con mayor correlación con `is_fraud` (0.28) en el dataset original.
+
+---
+
+### `hotel_international`
+**Cómo se calculó:**
+```python
+df['hotel_international'] = df['is_hotel'] & df['is_international']
+```
+**Para qué sirve:** combinación de alto riesgo: hotel + internacional. Detecta el patrón clásico de fraude donde se usa una tarjeta robada en un hotel de otro país. Presencia en fraude: **4.86%** vs 2.03% en legítimos.
+
+---
+
+### `hotel_high_distance`
+**Cómo se calculó:**
+```python
+q75 = df['distance_from_home_km'].quantile(0.75)  # ~483 km
+df['hotel_high_distance'] = df['is_hotel'] & (df['distance_from_home_km'] > q75)
+```
+**Para qué sirve:** identifica hoteles muy lejos del hogar del cliente (percentil 75 de distancia). Complementa `hotel_international` para casos dentro del mismo país pero con gran desplazamiento. Presencia en fraude: **5.00%** vs 2.15% en legítimos.
+
+---
+
+## 4. Features históricas por cliente
+
+Todas calculadas con transacciones **anteriores** al momento de la transacción actual.  
+Los **NaN en primeras transacciones son estructurales y esperados** — LightGBM los maneja nativamente.
+
+---
+
+### `client_txn_count_before`
+**Cómo se calculó:**
+```python
+df = df.sort_values(['client_id', 'transaction_datetime'])
+df['client_txn_count_before'] = df.groupby('client_id').cumcount()
+# cumcount() retorna 0 para la primera txn, 1 para la segunda, etc.
+```
+**Para qué sirve:** indica cuántas transacciones previas tiene el cliente en el dataset. `0` = primera transacción registrada. Sirve como denominador para calcular promedios históricos y detectar clientes nuevos (mayor riesgo). Media en fraude: **13.9** vs 12.5 en legítimos — los clientes con más historial tienden a tener más fraude acumulado.
+
+---
+
+### `client_avg_amount_before`
+**Cómo se calculó:**
+```python
+cumsum = df.groupby('client_id')['amount_usd'].cumsum()
+suma_antes = cumsum - df['amount_usd']   # excluye el valor actual
+df['client_avg_amount_before'] = suma_antes / df['client_txn_count_before'].replace(0, np.nan)
+```
+**Para qué sirve:** promedio del monto de todas las transacciones anteriores del cliente. Es la referencia personal de gasto. Se usa como denominador en `amount_vs_hist_avg` y `amount_zscore_customer`. Media en fraude: **$471** vs $422 en legítimos — los clientes que cometen fraude tienen historial de gasto ligeramente mayor. NaN en la primera transacción de cada cliente (4,000 filas, 4%).
+
+---
+
+### `client_std_amount_before`
+**Cómo se calculó:**
+```python
+df['client_std_amount_before'] = df.groupby('client_id')['amount_usd'].transform(
+    lambda x: x.expanding().std().shift(1)
+)
+# expanding().std() dentro del transform opera sobre la serie del grupo → shift es relativo al grupo
+```
+**Para qué sirve:** desviación estándar histórica del monto del cliente. Clientes con alta variabilidad (std alto) son más difíciles de detectar por monto. Es el denominador del z-score. NaN en las primeras 2 transacciones de cada cliente (8,000 filas, 8%) porque std requiere al menos 2 valores.
+
+---
+
+### `client_max_amount_before`
+**Cómo se calculó:**
+```python
+df['client_max_amount_before'] = df.groupby('client_id')['amount_usd'].transform(
+    lambda x: x.expanding().max().shift(1)
+)
+```
+**Para qué sirve:** el mayor monto que el cliente ha gastado alguna vez antes. Es el techo de referencia personal. Usado para calcular `amount_vs_max_ever_ratio`. Media en fraude: **$1,663** vs $1,485 en legítimos.
+
+---
+
+### `amount_vs_hist_avg`
+**Cómo se calculó:**
+```python
+df['amount_vs_hist_avg'] = df['amount_usd'] / df['client_avg_amount_before'].replace(0, np.nan)
+```
+**Para qué sirve:** cuántas veces supera el monto actual al promedio histórico del cliente. Un valor de 3.0 significa que el cliente está gastando el triple de lo habitual. Media en fraude: **8.48** vs 1.39 en legítimos — los fraudes en promedio son 8 veces el gasto habitual. Mediana fraude: 2.05 vs 0.54 — incluso la transacción "típica" de fraude dobla la media histórica del cliente.
+
+---
+
+### `amount_over_hist_std` (alias: `amount_zscore_customer`)
+**Cómo se calculó:**
+```python
+df['amount_over_hist_std'] = (
+    (df['amount_usd'] - df['client_avg_amount_before'])
+    / df['client_std_amount_before'].replace(0, np.nan)
+)
+```
+**Para qué sirve:** z-score del monto actual respecto al historial personal del cliente. Normaliza la anomalía del monto en unidades de desviación estándar, comparable entre clientes con diferentes perfiles de gasto. Mediana en fraude: **+0.96σ** vs −0.41σ en legítimos. Valores por encima de +2σ son altamente sospechosos.
+
+---
+
+### `client_intl_rate_before`
+**Cómo se calculó:**
+```python
+intl_int    = df['is_international'].astype(int)
+cumsum_intl = intl_int.groupby(df['client_id']).cumsum()
+df['client_intl_rate_before'] = (cumsum_intl - intl_int) / df['client_txn_count_before'].replace(0, np.nan)
+```
+**Para qué sirve:** proporción histórica de transacciones internacionales del cliente (0.0 a 1.0). Un cliente que nunca usó su tarjeta en el exterior y aparece en un hotel internacional es más sospechoso que uno que viaja frecuentemente. Media en fraude: **0.26** vs 0.23 en legítimos.
+
+---
+
+## 5. Features históricas por canal
+
+Misma lógica anti look-ahead pero calculada dentro del mismo canal de transacción.
+
+---
+
+### `client_channel_txn_count_before`
+**Cómo se calculó:**
+```python
+df['client_channel_txn_count_before'] = df.groupby(['client_id', 'channel']).cumcount()
+```
+**Para qué sirve:** número de veces que el cliente ha usado ese canal específico antes. Un cliente que normalmente usa POS y de repente transacciona en ECOM tiene `0` en ese canal. Media en fraude: **6.49** vs 4.72 en legítimos — los fraudes ocurren en canales que el cliente ya usó antes, no en canales nuevos.
+
+---
+
+### `client_channel_avg_amount_before`
+**Cómo se calculó:**
+```python
+gc = df.groupby(['client_id', 'channel'])
+cumsum_ch = gc['amount_usd'].cumsum()
+df['client_channel_avg_amount_before'] = (
+    (cumsum_ch - df['amount_usd'])
+    / df['client_channel_txn_count_before'].replace(0, np.nan)
+)
+```
+**Para qué sirve:** gasto promedio histórico del cliente **en ese canal específico**. Más preciso que el promedio general porque cada canal tiene montos típicos diferentes (ATM: ~$350, ECOM: ~$550, POS: ~$285). Media en fraude: **$531** vs $419 en legítimos. NaN al 14.4% (primera transacción por cliente-canal).
+
+---
+
+### `amount_vs_channel_avg`
+**Cómo se calculó:**
+```python
+df['amount_vs_channel_avg'] = df['amount_usd'] / df['client_channel_avg_amount_before'].replace(0, np.nan)
+```
+**Para qué sirve:** ratio del monto actual vs el promedio histórico en ese canal. Más sensible que `amount_vs_hist_avg` porque compara en contexto del canal. Media en fraude: **17.53** vs 1.91 en legítimos — en fraude el monto supera 17 veces el promedio del canal.
+
+---
+
+### `client_channel_std_before`
+**Cómo se calculó:**
+```python
+df['client_channel_std_before'] = df.groupby(['client_id', 'channel'])['amount_usd'].transform(
+    lambda x: x.expanding().std().shift(1)
+)
+```
+**Para qué sirve:** desviación estándar del monto por canal. Es el denominador de `amount_zscore_channel`. NaN al 26.6% (primeras 2 transacciones por cliente-canal).
+
+---
+
+## 6. Features históricas de hospedaje
+
+Calculadas agrupando por `(client_id, is_hotel)`, capturando solo el comportamiento previo en hoteles.
+
+---
+
+### `client_hotel_txn_count_before`
+**Cómo se calculó:**
+```python
+gh = df.groupby(['client_id', 'is_hotel'])
+df['client_hotel_txn_count_before'] = gh.cumcount()
+df.loc[~df['is_hotel'], 'client_hotel_txn_count_before'] = 0  # 0 fuera de hotel
+```
+**Para qué sirve:** cuántas veces el cliente ha estado en hoteles antes. `0` significa que nunca ha tenido una transacción en hotel — ese cliente es un "turista nuevo" en el sistema, señal de alerta cuando el cargo es grande. Media en fraude: **1.34** vs 1.11 en legítimos.
+
+---
+
+### `client_hotel_avg_amount_before`
+**Cómo se calculó:**
+```python
+cumsum_hotel = gh['amount_usd'].cumsum()
+df['client_hotel_avg_amount_before'] = np.where(
+    df['is_hotel'] & (df['client_hotel_txn_count_before'] > 0),
+    (cumsum_hotel - df['amount_usd']) / df['client_hotel_txn_count_before'],
+    np.nan
+)
+```
+**Para qué sirve:** cuánto gasta habitualmente el cliente en hoteles. Un cargo hotelero que triplica este valor es anómalo. Solo tiene valor para transacciones de hotel con historial previo. NaN al 94.5% — correcto, la mayoría de transacciones no son de hotel. Media en fraude: **$961** vs $932 en legítimos.
+
+---
+
+### `client_hotel_intl_rate_before`
+**Cómo se calculó:**
+```python
+intl_int2         = df['is_international'].astype(int)
+cumsum_h_intl     = intl_int2.groupby([df['client_id'], df['is_hotel']]).cumsum()
+df['client_hotel_intl_rate_before'] = np.where(
+    df['is_hotel'] & (df['client_hotel_txn_count_before'] > 0),
+    (cumsum_h_intl - intl_int2) / df['client_hotel_txn_count_before'],
+    np.nan
+)
+```
+**Para qué sirve:** proporción histórica de hoteles internacionales del cliente. Si un cliente siempre se hospeda en hoteles locales y de repente aparece en un hotel en el exterior, es sospechoso. Media en fraude: **0.29** vs 0.24 en legítimos.
+
+---
+
+### `client_hotel_first_time`
+**Cómo se calculó:**
+```python
+df['client_hotel_first_time'] = (
+    df['is_hotel'] & (df['client_hotel_txn_count_before'] == 0)
+).astype(int)
+```
+**Para qué sirve:** flag binario — `1` si es la primera vez que el cliente transacciona en un hotel. Un cargo hotelero grande de un cliente sin ningún historial hotelero es altamente sospechoso. Frecuencia en legítimos: **39.9%** de hoteles son primera vez; en fraude: **34.9%** — curiosamente los fraudes ocurren más en clientes con algo de historial hotelero previo.
+
+---
+
+## 7. Features temporales y de velocidad
+
+---
+
+### `hours_since_last_txn`
+**Cómo se calculó:**
+```python
+# shift(1) en SeriesGroupBy opera per-group → correcto, no cruza clientes
+df['prev_txn_datetime'] = df.groupby('client_id')['transaction_datetime'].shift(1)
+df['hours_since_last_txn'] = (
+    (df['transaction_datetime'] - df['prev_txn_datetime']).dt.total_seconds() / 3600
+)
+df['hours_since_last_txn'] = df['hours_since_last_txn'].fillna(-1)  # -1 = primera txn
+```
+**Para qué sirve:** mide el tiempo transcurrido desde la transacción anterior del mismo cliente. Es el indicador más potente del dataset para fraude: en el **fraude la mediana es 2 horas**, mientras que en legítimos es **112 horas** (casi 5 días). El fraude ocurre en ráfagas cortas porque el ladrón quiere usar la tarjeta antes de que sea bloqueada.
+
+---
+
+### `is_rapid_succession`
+**Cómo se calculó:**
+```python
+df['is_rapid_succession'] = (
+    (df['hours_since_last_txn'] >= 0) & (df['hours_since_last_txn'] < 1)
+).astype(int)
+```
+**Para qué sirve:** flag binario de *card-testing* — transacciones en ráfaga a menos de 1 hora de diferencia. Es el predictor más fuerte del notebook: **41.2% de las transacciones fraudulentas** son sucesión rápida vs solo **0.62% de las legítimas**. Correlación con `is_fraud`: **0.55**.
+
+---
+
+### `time_since_last_txn_min`
+**Cómo se calculó:**
+```python
+df['time_since_last_txn_min'] = df['hours_since_last_txn'] * 60
+```
+**Para qué sirve:** versión en minutos de `hours_since_last_txn`. La mayor granularidad permite al modelo capturar mejor el rango de 0–60 minutos donde ocurre la mayoría del fraude en sucesión. Mediana fraude: **120 minutos** vs **6,744 minutos** en legítimos — una diferencia de 56×.
+
+---
+
+## 8. Features de ventana deslizante — Half 1
+
+Calculadas con búsqueda binaria (`bisect_left`) para eficiencia O(n log n). Solo cuentan transacciones **anteriores** dentro de la ventana.
+
+---
+
+### `txn_count_last_1h`
+**Cómo se calculó:**
+```python
+def sliding_txn_count(group, td):
+    times = group['transaction_datetime'].values.astype('int64')
+    window_ns = int(td.total_seconds() * 1e9)
+    counts = np.zeros(len(times), dtype=int)
+    for i in range(1, len(times)):
+        window_start = times[i] - window_ns
+        left = bisect_left(times, window_start, 0, i)  # O(log n)
+        counts[i] = i - left
+    return pd.Series(counts, index=group.index)
+
+df['txn_count_last_1h'] = df.groupby('client_id', group_keys=False).apply(
+    lambda grp: sliding_txn_count(grp, pd.Timedelta(hours=1))
+)
+```
+**Para qué sirve:** número de transacciones del cliente en la última hora antes de la actual. Detecta el patrón de *card-testing* donde se hacen múltiples cargos en minutos. Media en fraude: **6.67** vs **5.11** en legítimos. Es el segundo predictor más fuerte después de `is_rapid_succession` (correlación 0.12).
+
+---
+
+### `txn_count_last_24h`
+**Cómo se calculó:** igual que `txn_count_last_1h` con `pd.Timedelta(hours=24)`.
+
+**Para qué sirve:** velocidad diaria del cliente. Detecta campañas de fraude que duran varias horas pero dentro del mismo día. Media en fraude: **13.88** vs **12.50** en legítimos. Diferencia moderada porque el fraude extendido en 24h es menos común que el de 1h.
+
+---
+
+### `txn_count_last_7d`
+**Cómo se calculó:** igual con `pd.Timedelta(days=7)`.
+
+**Para qué sirve:** actividad semanal del cliente. En este dataset los valores son casi idénticos a `txn_count_last_24h`, lo que sugiere que la mayoría de las transacciones del mismo cliente en una semana ocurren el mismo día (coherente con el patrón de fraude en ráfaga). Útil como contexto del nivel de actividad habitual del cliente.
+
+---
+
+### `amount_zscore_customer`
+**Cómo se calculó:**
+```python
+df['amount_zscore_customer'] = df['amount_over_hist_std']  # alias con nombre estándar
+# (amount_usd - client_avg_amount_before) / client_std_amount_before
+```
+**Para qué sirve:** z-score estándar del monto del cliente respecto a su historial personal. Es la forma normalizada de detectar montos anómalos independientemente del perfil de gasto del cliente (un cliente VIP que gasta $5,000 no es anómalo; uno de bajo gasto sí lo es). Mediana fraude: **+0.96σ** vs −0.41σ en legítimos.
+
+---
+
+### `amount_zscore_channel`
+**Cómo se calculó:**
+```python
+df['amount_zscore_channel'] = (
+    (df['amount_usd'] - df['client_channel_avg_amount_before'])
+    / df['client_channel_std_before'].replace(0, np.nan)
+)
+```
+**Para qué sirve:** z-score del monto comparando contra el historial del cliente **en el mismo canal**. Más preciso que `amount_zscore_customer` porque los montos en ECOM son estructuralmente diferentes a los de ATM. Mediana fraude: **+0.92σ** vs −0.40σ en legítimos. NaN al 26.6% por primeras transacciones por canal.
+
+---
+
+### `unique_merchants_last_24h`
+**Cómo se calculó:**
+```python
+def sliding_unique(group, col, td):
+    times  = group['transaction_datetime'].values.astype('int64')
+    values = group[col].values
+    window_ns = int(td.total_seconds() * 1e9)
+    counts = np.zeros(len(times), dtype=int)
+    for i in range(1, len(times)):
+        window_start = times[i] - window_ns
+        mask = times[:i] >= window_start
+        counts[i] = len(set(values[:i][mask]))
+    return pd.Series(counts, index=group.index)
+
+df['unique_merchants_last_24h'] = df.groupby('client_id', group_keys=False).apply(
+    lambda grp: sliding_unique(grp, 'DE42_card_acceptor_id', pd.Timedelta(hours=24))
+)
+```
+**Para qué sirve:** número de comercios distintos visitados en las últimas 24 horas. Un ladrón que obtiene una tarjeta la usa en múltiples establecimientos rápidamente (*enumeration fraud*). Media en fraude: **13.63** vs **12.28** en legítimos.
+
+---
+
+### `unique_countries_last_24h`
+**Cómo se calculó:** igual que `unique_merchants_last_24h` con `'DE19_acquirer_country_code'`.
+
+**Para qué sirve:** número de países distintos donde el cliente ha transaccionado en las últimas 24 horas. Detecta *impossible travel* — físicamente imposible estar en 3 países en un día. Media en fraude: **3.42** vs **3.04** en legítimos. La diferencia es moderada porque el dataset sintético puede no capturar bien este patrón.
+
+---
+
+### `is_night_transaction`
+**Cómo se calculó:**
+```python
+df['is_night_transaction'] = df['hour_local'].between(0, 4).astype(int)
+```
+**Para qué sirve:** flag binario — `1` si la hora local está entre las 00:00 y las 04:59. El fraude en hoteles ocurre más frecuentemente de madrugada (check-ins tardíos fraudulentos, cargos de habitación post-evento). En hospedaje: **14.0%** de transacciones fraudulentas son nocturnas vs **8.2%** de las legítimas. A nivel general: **10.8%** vs **8.4%**.
+
+---
+
+### `amount_vs_max_ever_ratio`
+**Cómo se calculó:**
+```python
+df['amount_vs_max_ever_ratio'] = df['amount_usd'] / df['client_max_amount_before'].replace(0, np.nan)
+```
+**Para qué sirve:** ratio del monto actual vs el máximo histórico del cliente. Un valor > 1.0 significa que el cliente **nunca antes gastó tanto** — es una señal de alerta fuerte. El **29.1% de las transacciones fraudulentas** superan el máximo histórico del cliente, vs solo el **10.7% de las legítimas**. Media en fraude: **6.74** (casi 7 veces el máximo histórico en promedio, debido a outliers extremos).
+
+---
+
+## 9. Features hotel y comportamiento avanzado — Half 2
+
+---
+
+### `hotel_amount_zscore`
+**Cómo se calculó:**
+```python
+# Std histórica de monto en hotel
+gh = df.groupby(['client_id', 'is_hotel'])
+df['client_hotel_std_before'] = gh['amount_usd'].transform(
+    lambda x: x.expanding().std().shift(1)
+)
+df['hotel_amount_zscore'] = np.where(
+    df['is_hotel'] & df['client_hotel_avg_amount_before'].notna(),
+    (df['amount_usd'] - df['client_hotel_avg_amount_before']) / df['client_hotel_std_before'].replace(0, np.nan),
+    np.nan
+)
+```
+**Para qué sirve:** z-score del monto **dentro del contexto hotelero del cliente**. Más preciso que `amount_zscore_customer` para detectar cargos hoteleros anómalos, porque compara el cargo con el historial específico de hoteles del cliente (no con sus compras en supermercados o gasolineras). Mediana en fraude: **+0.88σ** vs −0.12σ en legítimos. NaN al 97.2% (solo aplica a hoteles con historial previo de hotel).
+
+---
+
+### `days_since_last_hotel_txn`
+**Cómo se calculó:**
+```python
+df['_prev_hotel_dt'] = gh['transaction_datetime'].shift(1)  # shift por grupo (is_hotel=True)
+df['days_since_last_hotel_txn'] = np.where(
+    df['is_hotel'] & df['_prev_hotel_dt'].notna(),
+    (df['transaction_datetime'] - df['_prev_hotel_dt']).dt.total_seconds() / 86400,
+    -1  # -1 = primera txn en hotel o no es hotel
+)
+```
+**Para qué sirve:** días transcurridos desde la última transacción del cliente en un hotel. Un fraude que carga dos hoteles en pocas horas es altamente sospechoso. Media en fraude: **0.83 días** vs 1.31 días en legítimos — los fraudes regresan al hotel más rápido. Solo tiene sentido para hoteles con historial previo (`-1` en los demás).
+
+---
+
+### `hotel_new_country`
+**Cómo se calculó:**
+```python
+# Para cada txn de hotel, verificar si el país (DE19) ya apareció antes en hoteles del mismo cliente
+seen = {}
+for _, row in hotel_sub.iterrows():
+    cid, country = row['client_id'], row['DE19_acquirer_country_code']
+    seen.setdefault(cid, set())
+    flag = 1 if country not in seen[cid] else 0
+    seen[cid].add(country)
+df.loc[hotel_idx, 'hotel_new_country'] = flags
+```
+**Para qué sirve:** `1` si el hotel está en un país que el cliente nunca había visitado antes (en hoteles). Detecta el patrón de tarjeta robada usada en destino turístico desconocido para el cliente. Frecuencia en fraude: **72.3%** vs **58.9%** en legítimos — el fraude ocurre más frecuentemente en países hoteleros nuevos para el cliente.
+
+---
+
+### `merchant_txn_count_before`
+**Cómo se calculó:**
+```python
+df['merchant_txn_count_before'] = df.groupby(['client_id', 'DE42_card_acceptor_id']).cumcount()
+```
+**Para qué sirve:** cuántas veces el cliente ha usado **este comercio específico** antes. `0` significa que es un comercio completamente nuevo para el cliente. El **97.4% de todas las transacciones** (tanto fraude como legítimas) son en comercios nuevos para el cliente, lo que limita el poder discriminatorio de esta variable. Sin embargo, puede ser útil en combinación con otras variables.
+
+---
+
+### `rapid_country_change`
+**Cómo se calculó:**
+```python
+df['_prev_country'] = df.groupby('client_id')['DE19_acquirer_country_code'].shift(1)
+df['rapid_country_change'] = (
+    (df['DE19_acquirer_country_code'] != df['_prev_country'])
+    & (df['time_since_last_txn_min'] >= 0)    # no es la primera txn
+    & (df['time_since_last_txn_min'] < 1440)  # menos de 24 horas
+).astype(int)
+```
+**Para qué sirve:** detecta *impossible travel* — cambio de país en menos de 24 horas. Es la **variable más potente de Half 2** con correlación **0.29** con `is_fraud`. Frecuencia en fraude: **37.6%** vs **4.9%** en legítimos. En hospedaje específicamente: **48.2%** en fraude vs **5.2%** en legítimos — casi la mitad de los fraudes hoteleros involucran un cambio de país rápido previo.
+
+---
+
+### `amount_round_flag`
+**Cómo se calculó:**
+```python
+df['amount_round_flag'] = (
+    (df['amount_usd'] % 50 < 0.01) | (df['amount_usd'] % 50 > 49.99)
+).astype(int)
+```
+**Para qué sirve:** flag para montos múltiplos exactos de $50 o $100 USD, patrón común en *card-testing* (un ladrón hace cargos redondos para verificar que la tarjeta funciona). **Variable débil en este dataset**: frecuencia casi idéntica en fraude (0.02%) y legítimo (0.05%). El dataset sintético de PlusTI no genera este patrón, pero es estándar en detección de fraude real.
+
+---
+
+### `client_weekend_rate_before`
+**Cómo se calculó:**
+```python
+weekend_int = df['day_of_week'].isin(['Sat', 'Sun']).astype(int)
+cumsum_wk   = weekend_int.groupby(df['client_id']).cumsum()
+df['client_weekend_rate_before'] = (
+    (cumsum_wk - weekend_int) / df['client_txn_count_before'].replace(0, np.nan)
+)
+```
+**Para qué sirve:** proporción histórica de compras del cliente en fin de semana. Un cliente que nunca compra en fin de semana y aparece con un cargo hotelero un sábado es inusual. **Variable débil en este dataset**: media fraude **27.0%** vs legítimo **27.6%** — prácticamente sin diferencia. El patrón de fraude en este dataset no depende del día de la semana.
+
+---
+
+### `hotel_distance_zscore`
+**Cómo se calculó:**
+```python
+# Media histórica de distancia en hoteles
+cumsum_dist  = gh['distance_from_home_km'].cumsum()
+df['client_hotel_avg_dist_before'] = np.where(
+    df['is_hotel'] & (df['client_hotel_txn_count_before'] > 0),
+    (cumsum_dist - df['distance_from_home_km']) / df['client_hotel_txn_count_before'],
+    np.nan
+)
+# Std histórica de distancia en hoteles
+df['client_hotel_std_dist_before'] = gh['distance_from_home_km'].transform(
+    lambda x: x.expanding().std().shift(1)
+)
+df['hotel_distance_zscore'] = np.where(
+    df['is_hotel'] & df['client_hotel_avg_dist_before'].notna(),
+    (df['distance_from_home_km'] - df['client_hotel_avg_dist_before']) / df['client_hotel_std_dist_before'].replace(0, np.nan),
+    np.nan
+)
+```
+**Para qué sirve:** z-score de la distancia del hotel vs el historial de distancias hoteleras del cliente. Si el cliente normalmente se hospeda a 50 km de casa y este hotel está a 10,000 km, la anomalía geográfica se captura en este z-score. Mediana en fraude: **+0.94σ** vs −0.56σ en legítimos — los fraudes ocurren en hoteles más lejanos de lo habitual para ese cliente. NaN al 97.2% (solo aplica a hoteles con historial).
+
+---
+
+### `hour_deviation_from_usual`
+**Cómo se calculó:**
+```python
+cumsum_hour = df['hour_local'].groupby(df['client_id']).cumsum()
+df['client_avg_hour_before'] = (
+    (cumsum_hour - df['hour_local']) / df['client_txn_count_before'].replace(0, np.nan)
+)
+df['hour_deviation_from_usual'] = (df['hour_local'] - df['client_avg_hour_before']).abs()
+```
+**Para qué sirve:** cuántas horas se aleja la hora actual de la hora media histórica del cliente. Captura el patrón de transacciones en horas inusuales para ese cliente específico. Media en fraude: **4.77 horas** vs **5.19 horas** en legítimos — diferencia pequeña, variable de señal moderada. En hospedaje específicamente los fraudes tienen mayor desviación (5.47 vs 5.23).
+
+---
+
+### `client_mcc_diversity_before`
+**Cómo se calculó:**
+```python
+df['client_mcc_diversity_before'] = df.groupby('client_id')['DE18_merchant_category_code'].transform(
+    lambda x: x.expanding().apply(
+        lambda s: s.iloc[:-1].nunique() if len(s) > 1 else 0, raw=False
+    )
+)
+```
+**Para qué sirve:** número de categorías de comercio (MCCs) distintas que el cliente ha visitado históricamente. Mide la diversidad del perfil de gasto: un cliente que solo compra en 2 tipos de comercio y aparece en un hotel es más anómalo que uno con historial diverso. Media en fraude: **8.55 MCCs** vs **7.94 MCCs** en legítimos — los clientes que cometen fraude tienen perfiles de gasto ligeramente más diversos. Correlación con `is_fraud`: **0.032**.
+
+---
+
+## 10. Variables excluidas — Leakage
+
+Estas variables capturan información que **solo existe después de que la transacción ya fue procesada**. Usarlas como features introduciría información del futuro en el modelo, inflando artificialmente las métricas y haciendo el modelo inútil en producción.
+
+| Variable | Por qué es leakage | Qué revela |
+|---|---|---|
+| `approved` | La aprobación es consecuencia de la decisión de autorización — conocerla antes de decidir es trampa. | Si la transacción fue aprobada o declinada. |
+| `DE39_response_code` | Código emitido por el emisor como **respuesta** a la solicitud. `00`=aprobada, `05`=declinada. | El resultado de la autorización. |
+| `response_description` | Texto descriptivo del `DE39_response_code`. | Igual que el anterior, en forma legible. |
+| `DE38_authorization_code` | Código de 6 caracteres emitido **solo** cuando la transacción es aprobada. Su ausencia ya revela que fue declinada. | Si fue aprobada y el código único de autorización. |
+
+> **Nota:** estas variables sí pueden usarse en el EDA exploratorio para entender los datos, pero deben excluirse completamente de los sets de features del modelo.
+
+---
+
+## 11. Tabla resumen
+
+### Features generadas — ordenadas por correlación absoluta con `is_fraud`
+
+| # | Variable | Correlación |is_fraud| Nulos | Origen |
+|---|---|---|---|---|
+| 1 | `is_rapid_succession` | 0.5493 | 0% | Temporal |
+| 2 | `rapid_country_change` | 0.2867 | 0% | Half 2 |
+| 3 | `hours_since_last_txn` | 0.1284 | 0% | Temporal |
+| 4 | `time_since_last_txn_min` | 0.1284 | 0% | Temporal |
+| 5 | `txn_count_last_1h` | 0.1169 | 0% | Half 1 |
+| 6 | `client_channel_txn_count_before` | 0.0939 | 0% | Canal |
+| 7 | `amount_vs_channel_avg` | 0.0667 | 14% | Canal |
+| 8 | `client_channel_avg_amount_before` | 0.0680 | 14% | Canal |
+| 9 | `amount_vs_hist_avg` | 0.0446 | 4% | Cliente |
+| 10 | `client_avg_amount_before` | 0.0398 | 4% | Cliente |
+| 11 | `client_max_amount_before` | 0.0396 | 4% | Cliente |
+| 12 | `client_txn_count_before` | 0.0366 | 0% | Cliente |
+| 13 | `unique_merchants_last_24h` | 0.0365 | 0% | Half 1 |
+| 14 | `txn_count_last_24h` | 0.0366 | 0% | Half 1 |
+| 15 | `txn_count_last_7d` | 0.0366 | 0% | Half 1 |
+| 16 | `client_std_amount_before` | 0.0355 | 8% | Cliente |
+| 17 | `client_intl_rate_before` | 0.0351 | 4% | Cliente |
+| 18 | `client_mcc_diversity_before` | 0.0319 | 0% | Half 2 |
+| 19 | `client_hotel_intl_rate_before` | 0.0316 | 94.5% | Hotel |
+| 20 | `unique_countries_last_24h` | 0.0493 | 0% | Half 1 |
+| 21 | `amount_vs_max_ever_ratio` | 0.0383 | 4% | Half 1 |
+| 22 | `hour_deviation_from_usual` | 0.0249 | 4% | Half 2 |
+| 23 | `is_night_transaction` | 0.0183 | 0% | Half 1 |
+| 24 | `hotel_amount_zscore` | 0.0176 | 97.2% | Half 2 |
+| 25 | `hotel_international` | — | 0% | EDA |
+| 26 | `hotel_high_distance` | — | 0% | EDA |
+| 27 | `amount_zscore_customer` | 0.0020 | 8% | Half 1 |
+| 28 | `amount_zscore_channel` | 0.0017 | 27% | Half 1 |
+| 29 | `hotel_distance_zscore` | 0.0097 | 97.2% | Half 2 |
+| 30 | `days_since_last_hotel_txn` | 0.0082 | 0% | Half 2 |
+| 31 | `client_weekend_rate_before` | 0.0077 | 4% | Half 2 |
+| 32 | `hotel_new_country` | 0.0071 | 0% | Half 2 |
+| 33 | `amount_round_flag` | 0.0028 | 0% | Half 2 |
+| 34 | `merchant_txn_count_before` | 0.0023 | 0% | Half 2 |
+| 35 | `client_hotel_first_time` | 0.0080 | 0% | Hotel |
+| 36 | `client_hotel_txn_count_before` | 0.0054 | 0% | Hotel |
+
+### Conteo de columnas por categoría
 
 | Categoría | Columnas |
 |---|---|
-| Identificadores (excluir) | 8 |
+| Identificadores (excluir del modelo) | 8 |
 | Campos ISO 8583 originales | 35 |
 | Variables de contexto banco/cliente | 17 |
 | Variables temporales preprocesamiento | 4 |
-| Features hospedaje — EDA | 5 |
+| Features de hospedaje — EDA | 5 |
 | Features históricas por cliente | 7 |
 | Features históricas por canal | 4 |
 | Features históricas de hospedaje | 4 |
-| Features temporales / velocidad | 3 |
+| Features temporales y velocidad | 3 |
 | Features ventana deslizante — Half 1 | 9 |
-| **Half 2 pendiente** | **10** |
-| **TOTAL actual** | **97** |
-| **TOTAL con Half 2** | **107** |
+| Features hotel y comportamiento — Half 2 | 14 |
+| **TOTAL** | **111** |
 
 ---
 
-*Generado automáticamente a partir de `data/processed/features_dataset.csv`*  
-*Notebook fuente: `notebooks/02_feature_engineering.ipynb`*
+> **Variables recomendadas para el modelo base** (mayor poder discriminatorio + 0% nulos):  
+> `is_rapid_succession`, `rapid_country_change`, `hours_since_last_txn`, `time_since_last_txn_min`,  
+> `txn_count_last_1h`, `client_channel_txn_count_before`, `is_hotel`, `amount_vs_hist_avg`,  
+> `client_txn_count_before`, `unique_merchants_last_24h`, `is_night_transaction`,  
+> `hotel_new_country`, `client_mcc_diversity_before`, `client_hotel_first_time`
+
+---
+
+*Generado a partir de `data/processed/features_dataset.csv` — Notebook `02_feature_engineering.ipynb`*
