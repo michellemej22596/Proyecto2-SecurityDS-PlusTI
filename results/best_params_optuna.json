@@ -1,0 +1,20 @@
+{
+  "num_leaves": 147,
+  "max_depth": 10,
+  "min_child_samples": 20,
+  "max_bin": 93,
+  "learning_rate": 0.1359953862282837,
+  "subsample": 0.9880791545970978,
+  "colsample_bytree": 0.6550604726961442,
+  "reg_alpha": 0.0024094496531941565,
+  "reg_lambda": 0.001167345258388437,
+  "min_split_gain": 0.2830490167548362,
+  "scale_pos_weight": 12.89161581930564,
+  "objective": "binary",
+  "force_col_wise": true,
+  "verbose": -1,
+  "random_state": 42,
+  "n_jobs": 4,
+  "best_iteration": 86,
+  "best_val_score_m2": 0.6046199301638464
+}
