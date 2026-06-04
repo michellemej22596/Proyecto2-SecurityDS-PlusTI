@@ -1,0 +1,5 @@
+modelo,AUC_ROC,PR_AUC
+Local B1,0.8774,0.6996
+Local B2,0.8092,0.5565
+Federado (B1+B2),0.8928,0.7746
+Centralizado (ref),0.8902,0.798

@@ -1,7 +1,7 @@
-metric,best_threshold,tp_hotel,fp_hotel,fn_hotel,recall_hotel,precision_hotel,fp_ratio_hotel,auc_roc_global,pr_auc_global
-hotel_fp_ratio,0.5,50,7,23,0.6849,0.8772,0.1228,0.9031,0.8085
-hotel_recall_minus_fpratio,0.55,49,7,24,0.6712,0.875,0.125,0.9034,0.8056
-hotel_fbeta_precision,0.5,49,7,24,0.6712,0.875,0.125,0.9015,0.8059
-hotel_cost_matrix,0.5,49,7,24,0.6712,0.875,0.125,0.9015,0.8059
-hotel_precision_at_min_recall,0.45,50,7,23,0.6849,0.8772,0.1228,0.9016,0.8097
-composite_hotel_global,0.5,49,7,24,0.6712,0.875,0.125,0.9026,0.8101
+metric,best_threshold,tp_hotel,fp_hotel,fn_hotel,recall_hotel,precision_hotel,fp_ratio_hotel,reached_90,auc_roc_global,pr_auc_global
+hotel_fp_ratio,0.01,183,2711,18,0.9104,0.0632,0.9368,True,0.9015,0.7981
+hotel_recall_minus_fpratio,0.01,182,2672,19,0.9055,0.0638,0.9362,True,0.9004,0.7966
+hotel_fbeta_precision,0.005,201,4307,0,1.0,0.0446,0.9554,True,0.8983,0.7591
+hotel_cost_matrix,0.005,201,4307,0,1.0,0.0446,0.9554,True,0.8983,0.7591
+hotel_precision_at_min_recall,0.01,183,2711,18,0.9104,0.0632,0.9368,True,0.9015,0.7981
+composite_hotel_global,0.01,182,2672,19,0.9055,0.0638,0.9362,True,0.9004,0.7966

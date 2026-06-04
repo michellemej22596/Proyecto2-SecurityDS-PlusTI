@@ -87,3 +87,7 @@ hotel_distance_zscore
 client_avg_hour_before
 hour_deviation_from_usual
 client_mcc_diversity_before
+hotel_pos_anomaly
+hotel_x_amount_ratio
+hotel_x_amount_usd
+hotel_x_distance
