@@ -1,4 +1,4 @@
 model,tp_hotel,fp_hotel,fn_hotel,recall_hotel,fp_ratio_hotel,auc_roc,threshold,recall_pct,fp_ratio_pct
-Baseline global nb03 (umbral óptimo hotel),50,33,23,0.684931506849315,0.39759036144578314,0.8995,0.85,68.5,39.8
+Baseline LightGBM (class_weight=balanced),183,2843,18,0.9104477611940298,0.9395241242564442,0.8978487367612322,0.045,91.0,94.0
 Custom feval nb04 (hotel_recall_minus_fpratio),182,2672,19,0.9055,0.9362,0.9004,0.01,90.6,93.6
-"Optimizado nb05 (Optuna, espacio regularizado)",50,10,23,0.684931506849315,0.16666666666666666,0.899131665963135,0.35,68.5,16.7
+Optimizado nb05 (Optuna),184,2553,17,0.9154228855721394,0.9327731092436975,0.8934645838021236,0.035,91.5,93.3
