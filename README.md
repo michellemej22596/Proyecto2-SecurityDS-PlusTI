@@ -1,342 +1,226 @@
-# README — Proyecto de Detección de Fraude Bancario y Modelo Federado
-
-````markdown
 # Detección de Fraude Bancario con Métricas Personalizadas y Aprendizaje Federado
 
-Proyecto desarrollado para el convenio **PLUS TI – Universidad del Valle 2025**, enfocado en la detección de fraude en transacciones bancarias utilizando modelos de Machine Learning, métricas personalizadas y estrategias de aprendizaje federado.
+## PLUS TI – Universidad del Valle 2025
+
+### Integrantes
+
+* Silvia Illescas
+* Davis Roldán
+* Michelle Mejía
 
 ---
 
-# Integrantes
+# Resumen Ejecutivo
 
-- Silvia Illescas
-- Davis Roldán
-- Michelle Mejía
+Este proyecto tiene como objetivo desarrollar modelos de Machine Learning para la detección de fraude en transacciones bancarias utilizando datasets sintéticos basados en el estándar ISO 8583.
 
----
+El trabajo se divide en dos componentes principales:
 
-# Descripción General del Proyecto
+### Parte A — Optimización de Métricas Personalizadas
 
-El proyecto se divide en dos grandes componentes:
+Se diseñaron y evaluaron métricas personalizadas para LightGBM enfocadas en reducir la cantidad de falsos positivos manteniendo una capacidad de detección superior al 90%, con especial énfasis en fraudes asociados a establecimientos de hospedaje.
 
-## Parte A — Optimización de métricas para reducción de falsos positivos
+### Parte B — Modelo Federado
 
-Se busca entrenar modelos de clasificación binaria capaces de detectar transacciones fraudulentas minimizando la cantidad de falsos positivos, utilizando métricas de evaluación personalizadas (`feval`) en LightGBM.
-
-El objetivo específico asignado al grupo consiste en:
-
-> Mejorar la detección de fraudes cometidos en establecimientos de hospedaje.
-
-Esto implica desarrollar estrategias enfocadas en detectar patrones de fraude asociados a:
-- Hoteles
-- Hospedajes
-- Reservas
-- Comercios de travel/lodging
-- Transacciones internacionales asociadas al turismo
+Se implementó una estrategia de aprendizaje federado basada en modelos locales entrenados sobre dos bancos distintos, permitiendo generar inferencias sobre un tercer banco sin acceso a etiquetas de fraude.
 
 ---
 
-## Parte B — Entrenamiento de Modelo Federado
+# Objetivos
 
-Se implementa un modelo federado utilizando datasets de múltiples bancos con distribuciones de fraude diferentes.
+## Objetivo General
 
-El objetivo consiste en:
-- Entrenar con los datasets etiquetados de Banco 1 y Banco 2.
-- Generar inferencias sobre Banco 3, el cual no contiene la variable objetivo (`is_fraud`).
+Desarrollar modelos robustos para la detección de fraude financiero que permitan maximizar la detección de transacciones fraudulentas minimizando el impacto operativo generado por falsos positivos.
 
-El reto principal es lograr un modelo con buena capacidad de generalización entre distintos países, perfiles de clientes y tipologías de fraude.
+## Objetivos Específicos
+
+* Analizar el comportamiento de fraude en transacciones financieras.
+* Diseñar variables derivadas orientadas a la detección de anomalías.
+* Implementar métricas personalizadas para LightGBM.
+* Optimizar hiperparámetros utilizando Optuna.
+* Evaluar el desempeño sobre datos temporales no observados.
+* Implementar una estrategia federada para inferir fraude en un banco sin etiquetas.
 
 ---
 
 # Dataset
 
-El proyecto utiliza datasets sintéticos basados en el estándar financiero:
+Se utilizaron tres datasets sintéticos generados por PLUS TI, simulando operaciones bancarias reales bajo el estándar ISO 8583.
 
-## ISO 8583
+| Banco   | País                | Registros |
+| ------- | ------------------- | --------: |
+| Banco 1 | Bolivia (VIP)       |   100,000 |
+| Banco 2 | Brasil (Privado)    |   100,000 |
+| Banco 3 | Guatemala (Estatal) |   100,000 |
 
-El estándar ISO 8583 define mensajes de transacciones financieras utilizadas en redes de tarjetas de crédito y débito.
-
-Los datasets incluyen:
-- Transacciones legítimas
-- Transacciones fraudulentas
-- Variables bancarias
-- Variables de comportamiento
-- Variables geográficas
-- Variables derivadas para fraude
+El dataset presenta aproximadamente un 5% de transacciones fraudulentas, constituyendo un problema altamente desbalanceado.
 
 ---
 
-# Variables Importantes Utilizadas
+# Metodología
 
-Algunas de las variables más relevantes para el proyecto son:
+## 1. Exploratory Data Analysis (EDA)
 
-| Variable | Descripción |
-|---|---|
-| merchant_category_code | Categoría del comercio (MCC) |
-| amount_transaction | Monto de la transacción |
-| is_international | Indica si la transacción es internacional |
-| is_online | Indica si la transacción es e-commerce |
-| distance_from_home_km | Distancia entre cliente y comercio |
-| hour_of_day | Hora local de la transacción |
-| pos_entry_mode | Método de captura de tarjeta |
-| fraud_type | Tipo de fraude |
-| card_acceptor_name_location | Nombre y ubicación del comercio |
+Se realizó:
 
----
+* análisis de calidad de datos,
+* distribución de variables,
+* balanceo de clases,
+* comportamiento temporal,
+* análisis geográfico,
+* análisis por canal,
+* análisis por categoría de comercio (MCC).
 
-# Objetivo del Grupo
+### Hallazgos relevantes
 
-El enfoque principal del proyecto es optimizar la detección de fraude en establecimientos de hospedaje.
-
-Para ello se investigarán patrones asociados a:
-- Reservas internacionales
-- Compras online en hoteles
-- Transacciones de alto monto
-- Distancias geográficas anómalas
-- Actividad fuera del comportamiento habitual del cliente
+* Fraude global aproximado: 4.9%
+* Canal ECOM con mayor incidencia de fraude.
+* Montos fraudulentos significativamente superiores al promedio.
+* Determinados modos de captura POS presentan patrones altamente asociados al fraude.
 
 ---
 
-# Tecnologías Utilizadas
+## 2. Ingeniería de Variables
 
-## Lenguaje
-- Python 3.11+
+Se desarrollaron variables orientadas a capturar anomalías de comportamiento.
 
-## Librerías principales
+### Variables principales
 
-```python
-pandas
-numpy
-matplotlib
-seaborn
-scikit-learn
-lightgbm
-xgboost
-optuna
-````
+* time_since_last_txn_min
+* txn_count_last_1h
+* txn_count_last_24h
+* amount_zscore_customer
+* rapid_country_change
+* hotel_new_country
+* hotel_amount_zscore
+* hotel_pos_anomaly
+* hotel_x_amount_ratio
+* hotel_x_distance
 
-## Entorno recomendado
+Estas variables permitieron capturar patrones de velocidad, comportamiento histórico y anomalías específicas relacionadas con establecimientos de hospedaje.
 
-* Google Colab
-* Jupyter Notebook
-* VSCode
+---
+
+## 3. Modelo Base
+
+Se implementó un modelo inicial utilizando LightGBM.
+
+### Resultados Base
+
+| Métrica   | Valor |
+| --------- | ----: |
+| ROC-AUC   | 0.903 |
+| PR-AUC    | 0.772 |
+| Precision | 84.9% |
+| Recall    | 72.4% |
+| F1 Score  | 0.782 |
+
+Este modelo sirvió como punto de referencia para evaluar las métricas personalizadas.
+
+---
+
+## 4. Métricas Personalizadas
+
+Se desarrollaron seis funciones de evaluación especializadas para la detección de fraude en hospedajes:
+
+* hotel_fp_ratio
+* hotel_recall_minus_fpratio
+* hotel_fbeta_precision
+* hotel_cost_matrix
+* hotel_precision_at_min_recall
+* composite_hotel_global
+
+### Mejor Métrica
+
+La métrica con mejor desempeño fue:
+
+hotel_recall_minus_fpratio
+
+Esta función permitió priorizar la detección de fraude en hospedajes manteniendo un recall superior al 90%.
+
+---
+
+## 5. Optimización
+
+Se utilizó Optuna para realizar búsqueda automática de hiperparámetros.
+
+### Mejor configuración obtenida
+
+* Recall Hotel: 91.5%
+* Precision Hotel: 6.7%
+* FP Ratio Hotel: 93.3%
+* AUC Global: 0.894
+* PR-AUC Global: 0.794
+
+La optimización logró mejorar consistentemente el desempeño respecto al modelo base bajo la restricción de mantener alta sensibilidad.
+
+---
+
+## 6. Modelo Federado
+
+Se entrenaron modelos independientes utilizando los datasets etiquetados de Banco 1 y Banco 2.
+
+Posteriormente se construyó un esquema federado basado en agregación de modelos locales para realizar inferencias sobre Banco 3.
+
+### Resultados
+
+| Modelo       |   AUC |
+| ------------ | ----: |
+| Banco 1      | 0.877 |
+| Banco 2      | 0.809 |
+| Federado     | 0.893 |
+| Centralizado | 0.890 |
+
+El modelo federado logró un rendimiento comparable e incluso ligeramente superior al modelo centralizado de referencia.
 
 ---
 
 # Estructura del Proyecto
 
 ```plaintext
-fraud-detection-project/
-│
+.
+├── 01_eda.ipynb
+├── 02_feature_engineering.ipynb
+├── 03_baseline_model.ipynb
+├── 04_custom_metrics.ipynb
+├── 05_optimization.ipynb
+├── 06_federated_model.ipynb
 ├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── submissions/
-│
-├── notebooks/
-│   ├── 01_eda.ipynb
-│   ├── 02_feature_engineering.ipynb
-│   ├── 03_baseline_model.ipynb
-│   ├── 04_custom_metrics.ipynb
-│   ├── 05_optimization.ipynb
-│   └── 06_federated_model.ipynb
-│
-├── src/
-│   ├── preprocessing.py
-│   ├── features.py
-│   ├── metrics.py
-│   ├── train.py
-│   ├── inference.py
-│   └── utils.py
-│
 ├── outputs/
-│   ├── figures/
-│   ├── metrics/
-│   └── models/
-│
-├── report/
-│   └── informe.pdf
-│
-├── requirements.txt
 └── README.md
 ```
 
 ---
 
-# Metodología
+# Principales Hallazgos
 
-# 1. Exploratory Data Analysis (EDA)
-
-Se realiza:
-
-* análisis de distribución,
-* balanceo de clases,
-* detección de anomalías,
-* análisis temporal,
-* análisis geográfico,
-* comportamiento por MCC.
+* Las variables de comportamiento temporal fueron las más predictivas.
+* Los cambios rápidos de país representan un fuerte indicador de fraude.
+* Los patrones asociados a hospedajes presentan características diferenciadas respecto al fraude general.
+* El modelo federado mostró capacidad de generalización entre bancos con perfiles distintos.
+* Mantener niveles de detección superiores al 90% implica aceptar una proporción considerable de falsos positivos, característica común en sistemas antifraude reales.
 
 ---
 
-# 2. Ingeniería de Variables
+# Conclusiones
 
-Se desarrollan variables derivadas orientadas a mejorar la detección de fraude.
-
-Ejemplos:
-
-```python
-time_since_last_txn
-txn_count_last_1h
-txn_count_last_24h
-hotel_amount_zscore
-distance_from_home_km
-```
-
-También se generan features especializadas para establecimientos de hospedaje.
+* La ingeniería de variables tuvo un impacto mayor que la optimización de hiperparámetros.
+* Las métricas personalizadas permitieron alinear el modelo con objetivos de negocio específicos.
+* La estrategia federada permitió transferir conocimiento entre bancos sin requerir acceso a etiquetas del banco objetivo.
+* El proyecto demuestra cómo adaptar modelos de Machine Learning a problemas financieros reales donde la reducción de falsos positivos es tan importante como la detección de fraude.
 
 ---
 
-# 3. Modelo Base
+# Tecnologías Utilizadas
 
-Se implementa un modelo inicial utilizando:
-
-```python
-LightGBM
-```
-
-Métricas utilizadas:
-
-* ROC-AUC
-* Precision
-* Recall
-* F1-score
-
----
-
-# 4. Métricas Personalizadas
-
-Se desarrollan funciones `feval` personalizadas orientadas a:
-
-* reducir falsos positivos,
-* priorizar precisión,
-* mejorar recall en fraudes de hospedaje.
-
-Ejemplo conceptual:
-
-```python
-score = hotel_recall - alpha * false_positive_rate
-```
-
----
-
-# 5. Optimización
-
-Se realiza:
-
-* ajuste de hiperparámetros,
-* tuning de threshold,
-* balanceo de clases,
-* calibración de probabilidades.
-
----
-
-# 6. Modelo Federado
-
-Se entrenan modelos utilizando datasets de múltiples bancos.
-
-Objetivos:
-
-* evitar overfitting a patrones locales,
-* mejorar capacidad de generalización,
-* detectar patrones de fraude no vistos previamente.
-
----
-
-# Ejecución del Proyecto
-
-# 1. Clonar repositorio
-
-```bash
-git clone https://github.com/michellemej22596/Proyecto2-SecurityDS-PlusTI.git
-cd Proyecto2-SecurityDS-PlusTI
-```
-
----
-
-# 2. Crear entorno virtual
-
-## Windows
-
-```bash
-python -m venv venv
-venv\Scripts\activate
-```
-
-## Linux / Mac
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
----
-
-# 3. Instalar dependencias
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-# 4. Ejecutar notebooks
-
-Abrir Jupyter Notebook o Google Colab y ejecutar:
-
-```plaintext
-01_eda.ipynb
-02_feature_engineering.ipynb
-03_baseline_model.ipynb
-04_custom_metrics.ipynb
-05_optimization.ipynb
-06_federated_model.ipynb
-```
-
----
-
-# Métrica Principal del Proyecto
-
-La métrica principal utilizada para evaluar falsos positivos es:
-
-FP Ratio = FP / (TP + FP)
-
-Donde:
-
-* FP = False Positives
-* TP = True Positives
-
-El objetivo consiste en minimizar esta ratio manteniendo alta capacidad de detección de fraude.
-
----
-
-# Resultados Esperados
-
-Se espera:
-
-* reducir falsos positivos,
-* mejorar detección en establecimientos de hospedaje,
-* aumentar capacidad de generalización entre bancos,
-* obtener un modelo robusto para fraude financiero.
-
----
-
-# Recomendaciones
-
-* Documentar cada experimento realizado.
-* Mantener reproducibilidad de resultados.
-* Evitar data leakage.
-* Validar correctamente las divisiones temporales.
-* Analizar drift entre bancos.
+* Python
+* Pandas
+* NumPy
+* LightGBM
+* Scikit-Learn
+* Optuna
+* Matplotlib
+* Seaborn
 
 ---
 
@@ -344,7 +228,7 @@ Se espera:
 
 * ISO 8583 Financial Transaction Card Originated Messages
 * LightGBM Documentation
-* Scikit-learn Documentation
+* Scikit-Learn Documentation
 * PLUS TI – Universidad del Valle 2025
 
 ---
@@ -352,6 +236,3 @@ Se espera:
 # Licencia
 
 Proyecto desarrollado con fines académicos para el convenio PLUS TI – Universidad del Valle 2025.
-
-```
-```
