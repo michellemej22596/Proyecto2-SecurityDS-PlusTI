@@ -1,2 +1,7 @@
 data/processed/*.csv
 .venv
+# OS files
+.DS_Store
+
+# Claude Code
+CLAUDE.md
